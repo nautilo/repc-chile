@@ -72,6 +72,8 @@ def school_register():
 
 @app.route("/login",methods=["GET","POST"])
 def login():
+ if request.method=="GET":
+  return render_template("login.html")
  if request.method=="POST":
   email=request.form.get("email","").strip().lower()
   password=request.form.get("password","")
@@ -82,6 +84,10 @@ def login():
    return redirect(url_for("dashboard"))
   flash("Credenciales incorrectas.")
  return render_template("login.html")
+
+@app.route("/health")
+def health(): return {"ok":True,"database":uri.split(":")[0]}
+
 @app.route("/logout")
 def logout(): session.clear(); return redirect(url_for("home"))
 @app.route("/dashboard")
