@@ -24,7 +24,14 @@ class CustodyEvent(db.Model):
 class StudentProfile(db.Model):
  id=db.Column(db.Integer,primary_key=True); code=db.Column(db.String(30),unique=True,nullable=False); school_id=db.Column(db.Integer,db.ForeignKey("school.id"),nullable=False); power=db.Column(db.Integer,default=3); battery=db.Column(db.Integer,default=3); portability=db.Column(db.Integer,default=3); storage_pref=db.Column(db.Integer,default=3); reserved_pc_id=db.Column(db.Integer,db.ForeignKey("computer.id")); school=db.relationship("School"); reserved=db.relationship("Computer")
 
-def current_user():\n uid=session.get("uid")\n if not uid: return None\n try: return db.session.get(User,uid)\n except Exception:\n  db.session.rollback(); session.pop("uid",None); return None
+def current_user():
+ uid=session.get("uid")
+ if not uid: return None
+ try: return db.session.get(User,uid)
+ except Exception:
+  db.session.rollback()
+  session.pop("uid",None)
+  return None
 @app.context_processor
 def ctx(): return {"me":current_user()}
 def login_required(f):
@@ -46,6 +53,23 @@ def register():
   if User.query.filter_by(email=request.form["email"].lower()).first(): flash("Ese correo ya está registrado."); return redirect(url_for("register"))
   u=User(name=request.form["name"],email=request.form["email"].lower(),password=generate_password_hash(request.form["password"],method="pbkdf2:sha256"),capabilities=",".join(request.form.getlist("capabilities")) or "donor"); db.session.add(u); db.session.commit(); session["uid"]=u.id; return redirect(url_for("dashboard"))
  return render_template("register.html")
+
+@app.route("/school-register",methods=["GET","POST"])
+def school_register():
+ if request.method=="POST":
+  email=request.form.get("email","").strip().lower()
+  if User.query.filter_by(email=email).first():
+   flash("Ese correo ya está registrado.")
+   return redirect(url_for("school_register"))
+  s=School(name=request.form["school_name"].strip(),city=request.form["city"].strip(),receives=True,repairs="repairs" in request.form,certifies="certifies" in request.form)
+  db.session.add(s); db.session.flush()
+  u=User(name=request.form["name"].strip(),email=email,password=generate_password_hash(request.form["password"],method="pbkdf2:sha256"),role="school_coordinator",capabilities="",school_id=s.id)
+  db.session.add(u); db.session.commit()
+  session.clear(); session["uid"]=u.id
+  flash("Colegio inscrito. Esta cuenta quedó como coordinador del establecimiento.")
+  return redirect(url_for("dashboard"))
+ return render_template("school_register.html")
+
 @app.route("/login",methods=["GET","POST"])
 def login():
  if request.method=="POST":
