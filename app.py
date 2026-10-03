@@ -14,7 +14,7 @@ app.config["SQLALCHEMY_TRACK_MODIFICATIONS"]=False
 db=SQLAlchemy(app)
 
 class User(db.Model):
- id=db.Column(db.Integer,primary_key=True); name=db.Column(db.String(120),nullable=False); email=db.Column(db.String(160),unique=True,nullable=False); password=db.Column(db.String(255),nullable=False); role=db.Column(db.String(30),nullable=False,default="volunteer"); school_id=db.Column(db.Integer,db.ForeignKey("school.id"))
+ id=db.Column(db.Integer,primary_key=True); name=db.Column(db.String(120),nullable=False); email=db.Column(db.String(160),unique=True,nullable=False); password=db.Column(db.String(255),nullable=False); role=db.Column(db.String(30),nullable=True); capabilities=db.Column(db.String(200),nullable=False,default=""); school_id=db.Column(db.Integer,db.ForeignKey("school.id"))
 class School(db.Model):
  id=db.Column(db.Integer,primary_key=True); name=db.Column(db.String(160),nullable=False); city=db.Column(db.String(100),nullable=False); receives=db.Column(db.Boolean,default=True); repairs=db.Column(db.Boolean,default=False); certifies=db.Column(db.Boolean,default=False)
 class Computer(db.Model):
@@ -24,7 +24,7 @@ class CustodyEvent(db.Model):
 class StudentProfile(db.Model):
  id=db.Column(db.Integer,primary_key=True); code=db.Column(db.String(30),unique=True,nullable=False); school_id=db.Column(db.Integer,db.ForeignKey("school.id"),nullable=False); power=db.Column(db.Integer,default=3); battery=db.Column(db.Integer,default=3); portability=db.Column(db.Integer,default=3); storage_pref=db.Column(db.Integer,default=3); reserved_pc_id=db.Column(db.Integer,db.ForeignKey("computer.id")); school=db.relationship("School"); reserved=db.relationship("Computer")
 
-def current_user(): return db.session.get(User,session.get("uid")) if session.get("uid") else None
+def current_user():\n uid=session.get("uid")\n if not uid: return None\n try: return db.session.get(User,uid)\n except Exception:\n  db.session.rollback(); session.pop("uid",None); return None
 @app.context_processor
 def ctx(): return {"me":current_user()}
 def login_required(f):
@@ -44,7 +44,7 @@ def home(): return render_template("home.html",stats={"pcs":Computer.query.count
 def register():
  if request.method=="POST":
   if User.query.filter_by(email=request.form["email"].lower()).first(): flash("Ese correo ya está registrado."); return redirect(url_for("register"))
-  u=User(name=request.form["name"],email=request.form["email"].lower(),password=generate_password_hash(request.form["password"]),role=request.form["role"]); db.session.add(u); db.session.commit(); session["uid"]=u.id; return redirect(url_for("dashboard"))
+  u=User(name=request.form["name"],email=request.form["email"].lower(),password=generate_password_hash(request.form["password"],method="pbkdf2:sha256"),capabilities=",".join(request.form.getlist("capabilities")) or "donor"); db.session.add(u); db.session.commit(); session["uid"]=u.id; return redirect(url_for("dashboard"))
  return render_template("register.html")
 @app.route("/login",methods=["GET","POST"])
 def login():
@@ -111,8 +111,19 @@ def reserve(pcid):
 def seed_data():
  db.create_all()
  if School.query.count()==0:
-  a=School(name="Escuela Piloto Los Ríos",city="Valdivia",repairs=True,certifies=True); b=School(name="Escuela Rural Demo",city="Máfil"); db.session.add_all([a,b]); db.session.flush(); admin=User(name="Coordinación Demo",email="demo@repc.cl",password=generate_password_hash("demo1234"),role="admin",school_id=a.id); db.session.add(admin); db.session.flush()
+  a=School(name="Escuela Piloto Los Ríos",city="Valdivia",repairs=True,certifies=True); b=School(name="Escuela Rural Demo",city="Máfil"); db.session.add_all([a,b]); db.session.flush(); admin=User(name="Coordinación Demo",email="demo@repc.cl",password=generate_password_hash("demo1234",method="pbkdf2:sha256"),role="admin",capabilities="donor,technician,transporter",school_id=a.id); db.session.add(admin); db.session.flush()
   db.session.add_all([Computer(code="CL-DEMO01",brand="Lenovo",model="ThinkPad T480",cpu="Intel i5-8350U",ram=16,storage=256,battery=82,weight=1.58,status="CERTIFIED",school_id=a.id,donor_id=admin.id),Computer(code="CL-DEMO02",brand="HP",model="EliteBook 830 G6",cpu="Intel i5-8265U",ram=8,storage=256,battery=91,weight=1.33,status="CERTIFIED",school_id=a.id,donor_id=admin.id),Computer(code="CL-DEMO03",brand="Dell",model="Latitude 5490",cpu="Intel i5-8350U",ram=8,storage=512,battery=74,weight=1.60,status="CERTIFIED",school_id=a.id,donor_id=admin.id),StudentProfile(code="7A-DEMO",school_id=a.id)]); db.session.commit()
 @app.cli.command("seed")
 def seed(): seed_data(); print("Demo listo: demo@repc.cl / demo1234 | alumno: 7A-DEMO")
-with app.app_context(): seed_data()
+with app.app_context():
+ try:
+  db.create_all()
+  from sqlalchemy import inspect, text
+  cols=[col["name"] for col in inspect(db.engine).get_columns("user")]
+  if "capabilities" not in cols:
+   db.session.execute(text("ALTER TABLE user ADD COLUMN capabilities VARCHAR(200) NOT NULL DEFAULT ''"))
+   db.session.commit()
+  seed_data()
+ except Exception as exc:
+  db.session.rollback()
+  app.logger.exception("Database initialization failed: %s",exc)
