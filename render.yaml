@@ -1,0 +1,10 @@
+services:
+  - type: web
+    name: repc-chile
+    runtime: python
+    plan: free
+    buildCommand: pip install -r requirements.txt && flask --app app seed
+    startCommand: gunicorn app:app
+    envVars:
+      - key: SECRET_KEY
+        generateValue: true
