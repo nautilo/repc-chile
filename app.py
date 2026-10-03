@@ -49,8 +49,13 @@ def register():
 @app.route("/login",methods=["GET","POST"])
 def login():
  if request.method=="POST":
-  u=User.query.filter_by(email=request.form["email"].lower()).first()
-  if u and check_password_hash(u.password,request.form["password"]): session["uid"]=u.id; return redirect(url_for("dashboard"))
+  email=request.form.get("email","").strip().lower()
+  password=request.form.get("password","")
+  u=User.query.filter_by(email=email).first()
+  if u and check_password_hash(u.password,password):
+   session.clear()
+   session["uid"]=u.id
+   return redirect(url_for("dashboard"))
   flash("Credenciales incorrectas.")
  return render_template("login.html")
 @app.route("/logout")
